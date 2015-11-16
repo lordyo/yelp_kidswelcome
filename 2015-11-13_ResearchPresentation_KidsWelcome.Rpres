@@ -1,0 +1,241 @@
+<style>
+.reveal p,
+.reveal ul, 
+.reveal ol {
+    font-size: 80%;
+    list-style-type: square;
+    line-height: 110%;
+}
+.reveal h1, .reveal h2, .reveal h3 {
+  word-wrap: normal;
+  -moz-hyphens: none;
+}
+</style>
+
+
+========================================================
+title: false
+
+# Kids Welcome!
+
+## Predicting child friendliness of restaurant & food businesses from Yelp data
+
+Summary presentation of key findings
+
+Timm Suess, 2015-11-13
+
+***
+
+![Picture by Quinn Dombrowski via Flickr, CC-by-sa](kid_eating.jpg)
+
+Research focus and data preparation
+========================================================
+
+**Research question**
+
+How well can a "good for kids" rating of restaurant and food businesses be predicted from business features such as Yelp category, service attributes, city and key words in the business's name?
+
+**Data Source**
+
+[Yelp Dataset Challenge 6](http://www.yelp.com/dataset_challenge)
+
+**Application**
+- Parent-centric recommendation engines
+- Restauration market research
+- Review fraud detection
+
+***
+
+**Preprocessing**
+
+- Extraction of all businesses identificaton, evaluation, categories, attributes, location
+- Outcome variable: attribute "good for kids" (binary)
+- Filtering (no NA in outcome, category "Restaurant", "Food")
+- k-means clustering of GPS coordinates
+- Inclusion of top 300 words in business names
+- Creation of dummy variables
+
+
+Machine-learning approach
+========================================================
+left: 30%
+<img src="models.png" style="background-color:transparent; border:0px; box-shadow:none;"></img>
+
+***
+**Model building**
+
+- Impute NAs with variable median
+- Train three individual classifiers and one ensemble
+- Validate and test
+- select against multiple metrics
+
+**Outcome variable is skewed**
+
+More than 80% of all "good for kids" entries are positive:
+
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+load("processed_data/gfk_clean.df")
+
+library(printr)
+
+gfktab <- table(gfk_clean$gfk)
+
+gfkmat <- matrix(c(gfktab[[1]], gfktab[[2]], sum(gfktab),
+                 gfktab[[1]]/sum(gfktab), gfktab[[2]]/sum(gfktab), 1),
+                 ncol = 3, nrow = 2, byrow = TRUE)
+
+gfkmat[2, ] <- paste0(round(gfkmat[2, ], 3)*100, "%")
+
+rownames(gfkmat) <- c("n", "% Total")
+colnames(gfkmat) <- c("Not good for kids", "Good for kids", "Total")
+
+knitr::kable(gfkmat, caption = "Distribution of outcome variable", align = "c")
+
+```
+
+
+Results: Random Forest as best model
+========================================================
+**Key Metrics**
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+library(tidyr)
+library(caret)
+
+load("processed_data/validating_imp.df")
+load("processed_data/testing_imp.df")
+load("processed_data/val_rf_raw.confusionmatrix")
+load("processed_data/val_logitboost_raw.confusionmatrix")
+load("processed_data/val_nnet_raw.confusionmatrix")
+load("processed_data/test_gam_raw.confusionmatrix")
+load("processed_data/auc_rf.roc")
+load("processed_data/auc_logitboost.roc")
+load("processed_data/auc_nnet.roc")
+load("processed_data/auc_gam.roc")
+
+
+cm_v_rf <- confusionMatrix(val_rf_raw, validating_imp$gfk, positive = "yes")
+cm_v_lb <- confusionMatrix(val_logitboost_raw, validating_imp$gfk, positive = "yes")
+cm_v_nn <- confusionMatrix(val_nnet_raw, validating_imp$gfk, positive = "yes")
+cm_t_gam <- confusionMatrix(test_gam_raw, testing_imp$gfk, positive = "yes")
+
+construct_cmdf <- function(cf_object, modelname) {
+  df <- data.frame(model = modelname,
+                   metric = names(cf_object$overall),
+                         value = cf_object$overall,
+                   stringsAsFactors = FALSE)
+  
+  rownames(df) <- NULL
+  
+  df2 <- data.frame(model = modelname,
+                   metric = names(cf_object$byClass),
+                         value = cf_object$byClass,
+                   stringsAsFactors = FALSE)
+  
+  rownames(df2) <- NULL
+  
+  df <- bind_rows(df, df2)
+  
+  df
+}
+
+auc_values <- data.frame(model = c("RF", "LB", "NN", "GAM"),
+                         metric = rep("AUROC",4),
+                         value = c(as.numeric(auc_rf$auc),
+                                   as.numeric(auc_logitboost$auc),
+                                   as.numeric(auc_nnet$auc),
+                                   as.numeric(auc_gam$auc)),
+                         stringsAsFactors = FALSE) 
+
+cm_df <- construct_cmdf(cm_v_rf, "RF") %>% 
+  bind_rows(construct_cmdf(cm_v_lb, "LB")) %>% 
+  bind_rows(construct_cmdf(cm_v_nn, "NN")) %>% 
+  bind_rows(construct_cmdf(cm_t_gam, "GAM")) %>%
+  bind_rows(auc_values) %>%
+  filter(  metric == "Kappa" |
+           metric == "Sensitivity" |
+           metric == "Specificity" |
+           metric == "Balanced Accuracy" |
+           metric == "AUROC") %>%
+  mutate(metric = factor(metric, levels = c("AUROC",
+                                            "Balanced Accuracy",
+                                            "Sensitivity",
+                                            "Specificity",
+                                            "Kappa"))) %>% 
+  spread(model, value) %>% 
+  select(Metric = metric, RF, LB, NN, GAM)
+
+row.names(cm_df) <- cm_df$Metric
+cm_df <- select(cm_df, -Metric)
+
+library(printr)
+
+knitr::kable(cm_df, digits = 2, caption = "Classifier comparison", align = "c")
+
+```
+
+<small>RF=Random Forest, LB=LogitBoost, NN=Neural Net, GAM=General Additive Model</small>
+
+Random Forest emerges as clear winner. GAM shows surprisingly low performance, despite being the ensemble model.
+
+***
+**ROC Curves**
+```{r warning=FALSE, message=FALSE, echo=FALSE}
+
+
+ggdf_rf <- data.frame(spec = 1 - auc_rf$specificities, 
+                      sens = auc_rf$sensitivities) %>% 
+  mutate(side = "Validation Set", model = "Random Forest")
+
+ggdf_lb <- data.frame(spec = 1 - auc_logitboost$specificities, 
+                      sens = auc_logitboost$sensitivities) %>% 
+  mutate(side = "Validation Set", model = "LogitBoost")
+
+ggdf_nn <- data.frame(spec = 1 - auc_nnet$specificities, 
+                      sens = auc_nnet$sensitivities) %>% 
+  mutate(side = "Validation Set", model = "Neural Net")
+
+ggdf_gam <- data.frame(spec = 1 - auc_gam$specificities, 
+                       sens = auc_gam$sensitivities) %>% 
+  mutate(side = "Testing Set", model = "GAM")
+
+ggdf <- ggdf_rf %>% 
+  rbind(ggdf_lb) %>%
+  rbind(ggdf_nn) %>%
+  rbind(ggdf_gam) %>% 
+  mutate(side = factor(side, levels = c("Validation Set", "Testing Set"))) %>% 
+  mutate(model = factor(model, levels = c("Random Forest",
+                                          "LogitBoost",
+                                          "Neural Net",
+                                          "GAM")))
+
+ggplot(ggdf, aes(x = spec, y = sens, color = model)) +
+  geom_line() +
+  labs(x = "1- Specificity", y = "Sensitivity", color = "Model") +
+  scale_color_brewer(palette = "Dark2") +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", size = 0.2) +
+  ylim(0,1) + xlim(0,1) +
+  theme(legend.position="top")
+```
+<small>(GAM curve shows performance against testing data, others against validation data)</small>
+
+Interpretation
+========================================================
+
+**How well can child-friendliness be predicted?**
+
+- Overall, RF predicts child-friendliness fairly well (good AUROC, Kappa, Accuacy).
+- Excellent sensitivity, but poor specificity
+- Solid basis for a (positive) recommendation engine
+
+**Possible Improvements**
+
+- Get more data on child-unfriendly venues (e.g. from review texts)
+- Improve imputation algorithm
+- Use expert knowledge to discover hidden variables
+- Include additional variables (e.g. opening times)
+- Use other algorithms (SVM, deep learning)
