@@ -21,7 +21,7 @@ I will describe how I constructed the data set from both structured and unstruct
 
 ## Data Sources and reproducibility
 
-Yelp.com is a popular crowdsourced review site for local businesses. Yelp's *Academic Dataset* provides a rich collection of information about venues, including a user-driven attribute for child-friendliness. All of the research presented here are based on the data from the [*Yelp Dataset Challenge (Round 6)*](http://www.yelp.com/dataset_challenge). All of the code to construct the feature set and predictive model is written in R (V.3.2.2). For space limitation reasons, the code is not shown in this paper, but can be found on my [Github repository](https://github.com/lordyo/capstone2).
+Yelp.com is a popular crowdsourced review site for local businesses. Yelp's *Academic Dataset* provides a rich collection of information about venues, including a user-driven attribute for child-friendliness. All of the research presented here are based on the data from the [*Yelp Dataset Challenge (Round 6)*](http://www.yelp.com/dataset_challenge). All of the code to construct the feature set and predictive model is written in R (V.3.2.2). For space limitation reasons, the code is not shown in this paper, but can be found on my [Github repository](https://github.com/lordyo/yelp_kidswelcome).
 
 ## Pre-Processing
 
